@@ -52,7 +52,7 @@ const socialMediaSchema = new Schema<SocialMedia>({
 
 const userSchema = new Schema<User>(
   {
-    username: { type: String, default: '',required: true },
+    username: { type: String, default: ''},
     isDeleted: { type: Boolean, default: false },
     email: { type: String, unique: true, lowercase: true, default: '' },
     profileImage: { type: String, default: '' },
