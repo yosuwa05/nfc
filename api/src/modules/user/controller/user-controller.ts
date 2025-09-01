@@ -2,6 +2,8 @@ import { BadRequestError } from "@/lib/shared/bad-request";
 import { UserModel } from "@/schema/user-model";
 import Elysia, { t } from "elysia";
 import { userAuthMacro } from "../user-macro";
+import { convertTime } from "@/lib/timeConversion";
+import { deleteFile, saveFile } from "@/lib/file";
 
 interface UserResponse {
     businessImages: boolean;
@@ -215,32 +217,58 @@ export const userController = new Elysia({
       }),
     }
   )
-  .patch(
+  .post(
     "/user/profile-image",
     async ({ query, body, set }) => {
       try {
         const { userId } = query;
         const { profileImage } = body;
-
+  
         if (!userId || !profileImage) {
           throw new BadRequestError("User ID and profile image are required");
         }
-
-        const updatedUser = await UserModel.findByIdAndUpdate(
-          userId,
-          { profileImage },
-          { new: true }
-        );
-
-        if (!updatedUser) {
+  
+        // Find the user to get the existing profile image (if any)
+        const user = await UserModel.findById(userId);
+        if (!user) {
           throw new BadRequestError("User not found");
         }
-
+  
+        // Save the new profile image
+        const parentFolder = "profile-images";
+        const saveResult = saveFile(profileImage, parentFolder);
+        if (!saveResult.ok || !saveResult.filename) {
+          throw new BadRequestError("Failed to save profile image");
+        }
+  
+        // Delete the old profile image if it exists
+        if (user.profileImage) {
+          const deleteResult = await deleteFile(user.profileImage, parentFolder);
+          if (!deleteResult.ok) {
+            console.warn(`Failed to delete old profile image: ${user.profileImage}`);
+          }
+        }
+  
+        // Update user with new profile image path and last updated time
+        const updatedUser = await UserModel.findByIdAndUpdate(
+          userId,
+          {
+            profileImage: saveResult.filename,
+            updatedAt: convertTime(),
+          },
+          { new: true }
+        );
+  
+        if (!updatedUser) {
+          // Cleanup: delete the newly saved file if user update fails
+          await deleteFile(saveResult.filename, parentFolder);
+          throw new BadRequestError("Failed to update user profile");
+        }
+ 
         set.status = 200;
         return {
           status: true,
           message: "Profile image updated successfully",
-          data: updatedUser.profileImage,
         };
       } catch (error) {
         set.status = 400;
@@ -253,12 +281,13 @@ export const userController = new Elysia({
     {
       detail: {
         summary: "Update profile image of a user",
+        description: "Handles file upload for user profile image, deletes old image if exists, and updates user record",
       },
       query: t.Object({
         userId: t.String(),
       }),
       body: t.Object({
-        profileImage: t.String(),
+        profileImage: t.Any(), // Blob or file input
       }),
     }
   )

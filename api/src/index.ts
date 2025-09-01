@@ -4,9 +4,10 @@ import { app } from "./setup";
 config();
 
 const PORT = 4000;
-const HOST ="0.0.0.0"
+const HOST ="localhost"
 
 app.listen({ port: PORT, hostname: HOST }, () => {
   console.log(`Listening on http://${HOST}:${PORT}`);
-  console.log(`Checkout the docs at http://${HOST}:${PORT}/api/docs`);
+  console.log(`Checkout the docs at http://${HOST}:${PORT}/
+  docs`);
 });

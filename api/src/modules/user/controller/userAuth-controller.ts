@@ -4,6 +4,7 @@ import axios from "axios";
 import { UserModel } from "@/schema/user-model";
 import { BadRequestError } from "@/lib/shared/bad-request";
 import { OtpCountModel } from "@/schema/otpCount-model";
+import { convertTime } from "@/lib/timeConversion";
 
 const logError = (context: string, error: any) => {
   console.error(`[${new Date().toISOString()}] ${context}:`, {
@@ -47,88 +48,35 @@ export const userAuthController = new Elysia({
   tags: ["User Auth"],
 })
 .post(
-  "/register",
-  async ({ body, set }) => {
-    try {
-      const { username, mobile, email, fcmToken, city, state, businessDetails, socialMedia } = body;
-
-      const existingUser = await UserModel.findOne({
-        mobile ,
-        isDeleted: false,
-      });
-
-     if (existingUser) {
-        throw new BadRequestError(
-          "User with this  mobile number already exists"
-        );
-      }
-      const user = new UserModel({
-        username: username || "",
-        mobile,
-        email: email || "",
-        fcmToken: fcmToken || "",
-        city: city || "",
-        state: state || "",
-        businessDetails: businessDetails || {},
-        socialMedia: socialMedia || {},
-        role: "user",
-      });
-
-      await user.save();
-
-      set.status = 201;
-      return {
-        status: true,
-        message: "User registered successfully",
-        data: user,
-      };
-    } catch (error) {
-      set.status = 400;
-      return {
-        status: false,
-        message: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  },
-  {
-    detail: {
-      summary: "Register a new user (mobile-only minimal registration)",
-    },
-    body: t.Object({
-      mobile: t.String(),
-      username:t.String(),
-      email: t.Optional(t.String()),
-      fcmToken: t.Optional(t.String()),
-      city: t.Optional(t.String()),
-      state: t.Optional(t.String()),
-      businessDetails: t.Optional(t.Object({
-        companyName: t.String(),
-        companyAddress: t.String(),
-        companyMobile: t.String(),
-        companyEmail: t.String(),
-        companyWebsite: t.String(),
-      })),
-      socialMedia: t.Optional(t.Object({
-        facebook: t.String(),
-        x: t.String(),
-        whatsapp: t.String(),
-        youtube: t.String(),
-        instagram: t.String(),
-      })),
-    }),
-  }
-)
-
-.post(
   "/login",
   async ({ body, set }) => {
     try {
       const { mobile, fcmToken } = body;
-      const user = await UserModel.findOne({ mobile, isDeleted: false });
+      
+      // Try to find existing user
+      let user = await UserModel.findOne({ mobile, isDeleted: false });
+      
+      let isNewUser = false;
+      
       if (!user) {
-        throw new BadRequestError("User not found");
+        user = new UserModel({
+          mobile,
+          fcmToken: fcmToken || '',
+          isDeleted: false,
+        });
+        isNewUser = true;
+      } 
+
+      // Update lastLogin with offset for IST
+      user.lastLogin = convertTime();
+
+      if (!isNewUser && fcmToken) {
+        user.fcmToken = fcmToken;
       }
 
+      await user.save();
+
+      // Generate authentication token
       const token = await PasetoUtil.encodePaseto(
         {
           mobileNumber: mobile,
@@ -137,25 +85,31 @@ export const userAuthController = new Elysia({
         "user"
       );
 
-      user.fcmToken = fcmToken || '';
-      await user.save();
-
       // Format the username
       const formatUsername = (name: string) => {
-        return name.split(' ').map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
+        return name.split(' ').map((part: string) => 
+          part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+        ).join(' ');
       };
 
-      // Prepare user data, excluding sensitive fields
+      // Prepare user data, excluding sensitive fields and trimming to main details
       const { fcmToken: _, ...userData } = user.toObject();
-      userData.username = formatUsername(userData.username);
+      userData.username = formatUsername(userData.username || '');
 
       set.headers["Authorization"] = `Bearer ${token}`;
       set.status = 200;
+      
       return {
-        message: "Login Successful",
+        message: isNewUser ? "Registration and Login Successful" : "Login Successful",
         status: true,
+        isNewUser,
         data: {
-          ...userData,
+          _id: userData._id,
+          username: userData.username,
+          mobile: userData.mobile,
+          subscriptionPlan: userData.subscriptionPlan,
+          isActive: userData.isActive,
+          lastLogin: userData.lastLogin,
           token,
         },
       };
@@ -170,7 +124,8 @@ export const userAuthController = new Elysia({
   },
   {
     detail: {
-      summary: "User login",
+      summary: "User login or register",
+      description: "Login existing user or create new user if doesn't exist, then perform login",
     },
     body: t.Object({
       mobile: t.String(),
