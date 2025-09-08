@@ -36,7 +36,7 @@ interface UserResponse {
   }
 
 export const userController = new Elysia({
-    prefix: "/",
+    prefix: "/user",
     tags: ["User"],
   })
   .use(userAuthMacro)
