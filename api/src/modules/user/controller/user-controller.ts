@@ -36,13 +36,13 @@ interface UserResponse {
   }
 
 export const userController = new Elysia({
-    prefix: "/user",
+    prefix: "/",
     tags: ["User"],
   })
   .use(userAuthMacro)
   .guard({ isAuth: true }) 
 .get(
-  "/user",
+  "/details",
   async ({ query, set }) => {
     try {
       const { userId } = query;
@@ -218,7 +218,7 @@ export const userController = new Elysia({
     }
   )
   .post(
-    "/user/profile-image",
+    "/profile-image",
     async ({ query, body, set }) => {
       try {
         const { userId } = query;
@@ -292,7 +292,7 @@ export const userController = new Elysia({
     }
   )
   .patch(
-    "/user/selected-industries",
+    "/selected-industries",
     async ({ query, body, set }) => {
       try {
         const { userId } = query;
@@ -339,7 +339,7 @@ export const userController = new Elysia({
     }
   )
   .patch(
-    "/user/attached-links",
+    "/attached-links",
     async ({ query, body, set }) => {
       try {
         const { userId } = query;
@@ -386,7 +386,7 @@ export const userController = new Elysia({
     }
   )
   .patch(
-    "/user/business-images",
+    "/business-images",
     async ({ query, body, set }) => {
       try {
         const { userId } = query;
