@@ -1,10 +1,10 @@
 import { BadRequestError } from "@/lib/shared/bad-request";
-import { UserModel } from "@/schema/user-model";
 import Elysia, { t } from "elysia";
 import { userAuthMacro } from "../user-macro";
 import { convertTime } from "@/lib/timeConversion";
 import { deleteFile, saveFile } from "@/lib/file";
 import { IndustryModel } from "@/schema/admin/industries-model";
+import { UserModel } from "@/schema/user/user-model";
 
 interface UserResponse {
     businessImages: boolean;
