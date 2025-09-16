@@ -1,17 +1,10 @@
 import { BadRequestError } from "@/lib/shared/bad-request";
-<<<<<<< HEAD
-import { UserModel } from "@/schema/user/user-model";
-=======
 import { UserModel } from "@/schema/user-model";
->>>>>>> e7b4c2eaf2335985e3921c13a23ecf6e3c6bafb6
 import Elysia, { t } from "elysia";
 import { userAuthMacro } from "../user-macro";
 import { convertTime } from "@/lib/timeConversion";
 import { deleteFile, saveFile } from "@/lib/file";
-<<<<<<< HEAD
 import { IndustryModel } from "@/schema/admin/industries-model";
-=======
->>>>>>> e7b4c2eaf2335985e3921c13a23ecf6e3c6bafb6
 
 interface UserResponse {
     businessImages: boolean;
@@ -440,7 +433,7 @@ export const userController = new Elysia({
       }),
     }
   )
-<<<<<<< HEAD
+
   .get(
   "/",
   async ({ set }) => {
@@ -470,6 +463,3 @@ export const userController = new Elysia({
   }
 )
 
-=======
->>>>>>> e7b4c2eaf2335985e3921c13a23ecf6e3c6bafb6
-  
