@@ -1,11 +1,7 @@
 import { PasetoUtil } from "@/lib/paseto";
 import Elysia, { t } from "elysia";
 import axios from "axios";
-<<<<<<< HEAD
 import { UserModel } from "@/schema/user/user-model";
-=======
-import { UserModel } from "@/schema/user-model";
->>>>>>> e7b4c2eaf2335985e3921c13a23ecf6e3c6bafb6
 import { BadRequestError } from "@/lib/shared/bad-request";
 import { OtpCountModel } from "@/schema/otpCount-model";
 import { convertTime } from "@/lib/timeConversion";
