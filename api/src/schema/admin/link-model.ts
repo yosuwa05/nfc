@@ -1,15 +1,16 @@
 import { Schema, model, Document } from "mongoose";
 
 interface SubCategory {
+  _id?: string;       // Add this to include the generated ID in your TypeScript interface
   name: string;
-  icon?: string; // Optional field for icon URL or name
-  isActive?: boolean; // Optional field to toggle subcategory status
+  icon?: string;
+  isActive?: boolean;
 }
 
 interface Category extends Document {
   name: string;
   subCategories: SubCategory[];
-  isActive?: boolean; // Optional field to toggle category status
+  isActive?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -24,32 +25,32 @@ const subCategorySchema = new Schema<SubCategory>({
   icon: {
     type: String,
     trim: true,
-    default: "", // Optional icon URL or name
+    default: "",
   },
   isActive: {
     type: Boolean,
-    default: true, // Subcategory is active by default
+    default: true,
   },
-});
+}, { _id: true });  // ← This is the critical addition
 
-const categorySchema = new Schema<Category>(
+const linkSchema = new Schema<Category>(
   {
     name: {
       type: String,
       required: [true, "Category name is required"],
       trim: true,
       maxlength: [50, "Category name cannot exceed 50 characters"],
-      unique: true, // Ensure category names are unique
+      unique: true,
     },
-    subCategories: [subCategorySchema], // Array of subcategories
+    subCategories: [subCategorySchema],
     isActive: {
       type: Boolean,
-      default: true, // Category is active by default
+      default: true,
     },
   },
   {
-    timestamps: true, // Automatically adds createdAt and updatedAt
+    timestamps: true,
   }
 );
 
-export const CategoryModel = model<Category>("Category", categorySchema);
+export const linkModel = model<Category>("Links", linkSchema);

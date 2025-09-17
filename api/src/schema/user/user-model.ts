@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import { Schema, model, Document, Types } from "mongoose";
 
 interface User extends Document {
   username: string;
@@ -14,8 +14,18 @@ interface User extends Document {
   department?: string;
   slug?: string;
   businessDetails?: BusinessDetails;
-  socialMedia?: SocialMedia;
   subscriptionPlan?: string;
+  selectedIndustries: Array<{
+    industry: Types.ObjectId; // Reference to Industry
+    tags: string[];           // Custom tags for this industry
+  }>;
+   attachedLinks: Array<{
+    category: Types.ObjectId; // Reference to Category (e.g., "Social")
+    subCategories: Array<{
+      subCategoryId: Types.ObjectId; // Reference to SubCategory (e.g., WhatsApp)
+      url: string;                   // URL for the subcategory (e.g., "https://wa.me/1234567890")
+    }>;
+  }>;
 }
 
 interface BusinessDetails {
@@ -26,13 +36,6 @@ interface BusinessDetails {
   companyWebsite: string;
 }
 
-interface SocialMedia {
-  facebook: string;
-  x: string;
-  whatsapp: string;
-  youtube: string;
-  instagram: string;
-}
 
 const businessDetailsSchema = new Schema<BusinessDetails>({
   companyName: { type: String, default: '' },
@@ -42,13 +45,6 @@ const businessDetailsSchema = new Schema<BusinessDetails>({
   companyWebsite: { type: String, default: '' },
 });
 
-const socialMediaSchema = new Schema<SocialMedia>({
-  facebook: { type: String, default: '' },
-  x: { type: String, default: '' },
-  whatsapp: { type: String, default: '' },
-  youtube: { type: String, default: '' },
-  instagram: { type: String, default: '' },
-});
 
 const userSchema = new Schema<User>(
   {
@@ -62,10 +58,49 @@ const userSchema = new Schema<User>(
     fcmToken: { type: String, default: '' },
     mobile: { type: String, unique: true, required: true, default: '' },
     department: { type: String, default: '' },
+      selectedIndustries: [
+      {
+        industry: {
+          type: Schema.Types.ObjectId,
+          ref: 'Industry',  // Explicit ref for population
+          required: true
+        },
+        tags: {
+          type: [String],
+          default: []
+        }
+      }
+    ],
+
+    attachedLinks: [
+      {
+        category: {
+          type: Schema.Types.ObjectId,
+          ref: 'Links',
+          required: true
+        },
+        subCategories: [
+          {
+            subCategoryId: {
+              type: Schema.Types.ObjectId,
+              required: true
+            },
+            url: {
+              type: String,
+              required: true,
+              trim: true,
+              validate: {
+                validator: (v: string) => /^https?:\/\/.+/.test(v),
+                message: 'URL must start with http:// or https://'
+              }
+            }
+          }
+        ]
+      }
+    ],
     subscriptionPlan: { type: String, enum: ['basic', 'pro', 'pro+'], default: 'basic' },
     slug: { type: String, unique: true, default: '' },
     businessDetails: { type: businessDetailsSchema, default: {} },
-    socialMedia: { type: socialMediaSchema, default: {} },
   },
   { timestamps: true }
 );

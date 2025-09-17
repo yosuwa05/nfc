@@ -5,6 +5,7 @@ import { convertTime } from "@/lib/timeConversion";
 import { deleteFile, saveFile } from "@/lib/file";
 import { adminAuthMacro } from "../admin-macro";
 import { IndustryModel } from "@/schema/admin/industries-model";
+import { linkModel } from "@/schema/admin/link-model";
 
 interface UserResponse {
     businessImages: boolean;
@@ -35,17 +36,33 @@ interface UserResponse {
       businessImages: string[];
     };
   }
+  interface CategoryRequest {
+  name: string;
+  subCategories: SubCategory[];
+  isActive?: boolean;
+}
+interface SubCategory {
+  name: string;
+  icon?: string;
+  isActive?: boolean;
+}
+
+// Interface for Category (Links)
+interface Category extends Document {
+  name: string;
+  subCategories: SubCategory[];
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 export const userController = new Elysia({
     prefix: "/user",
-    tags: ["User"],
+    tags: ["Admin-User"],
   })
   .use(adminAuthMacro)
   .guard({ isAuth: true }) 
-  
-  // Add these endpoints to your industryController
-
-// POST endpoint for creating an industry with image
+ 
 .post(
     "/",
     async ({ body, set }) => {
@@ -203,3 +220,343 @@ export const userController = new Elysia({
 )
 
   
+  .post(
+    "/",
+    async ({ body, set }) => {
+      try {
+        const { name, subCategories, isActive } = body;
+
+        // Validate subcategory names are unique
+        const subCategoryNames = subCategories.map((sub) => sub.name);
+        const uniqueSubCategoryNames = new Set(subCategoryNames);
+        if (uniqueSubCategoryNames.size !== subCategoryNames.length) {
+          throw new BadRequestError("Subcategory names must be unique within a category");
+        }
+
+        // Check if category name already exists
+        const existingCategory = await linkModel.findOne({ name, isActive: true });
+        if (existingCategory) {
+          throw new BadRequestError("Category name already exists");
+        }
+
+        const newCategory = new linkModel({
+          name,
+          subCategories,
+          isActive: isActive !== undefined ? isActive : true,
+        });
+
+        await newCategory.save();
+
+        set.status = 201;
+        return {
+          status: true,
+          message: "Category created successfully",
+          data: newCategory,
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Create a new category",
+        description: "Creates a new category with subcategories",
+      },
+      body: t.Object({
+        name: t.String({
+          minLength: 1,
+          maxLength: 50,
+          error: "Category name is required and must not exceed 50 characters",
+        }),
+        subCategories: t.Array(
+          t.Object({
+            name: t.String({
+              minLength: 1,
+              maxLength: 50,
+              error: "Subcategory name is required and must not exceed 50 characters",
+            }),
+            icon: t.Optional(t.String()),
+            isActive: t.Optional(t.Boolean()),
+          })
+        ),
+        isActive: t.Optional(t.Boolean()),
+      }),
+    }
+  )
+  .get(
+    "/",
+    async ({ query, set }) => {
+      try {
+        const { isActive } = query;
+
+        const filter: { isActive?: boolean } = {};
+        if (isActive !== undefined) {
+          filter.isActive = isActive === "true";
+        }
+
+        const categories = await linkModel.find(filter).sort({ createdAt: -1 });
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "Categories retrieved successfully",
+          data: categories,
+        };
+      } catch (error) {
+        set.status = 500;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Get all categories",
+        description: "Retrieve a list of categories, optionally filtered by isActive status",
+      },
+      query: t.Object({
+        isActive: t.Optional(t.String({ pattern: "^(true|false)$" })),
+      }),
+    }
+  )
+  .get(
+    "/:id",
+    async ({ params, set }) => {
+      try {
+        const { id } = params;
+
+        const category = await linkModel.findById(id);
+        if (!category) {
+          throw new BadRequestError("Category not found");
+        }
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "Category retrieved successfully",
+          data: category,
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Get a category by ID",
+        description: "Retrieve a single category by its ID",
+      },
+      params: t.Object({
+        id: t.String(),
+      }),
+    }
+  )
+  .patch(
+    "/:id",
+    async ({ params, body, set }) => {
+      try {
+        const { id } = params;
+        const { name, subCategories, isActive } = body;
+
+        // Check if category exists
+        const category = await linkModel.findById(id);
+        if (!category) {
+          throw new BadRequestError("Category not found");
+        }
+
+        // If updating name, check for uniqueness
+        if (name && name !== category.name) {
+          const existingCategory = await linkModel.findOne({ name, isActive: true });
+          if (existingCategory) {
+            throw new BadRequestError("Category name already exists");
+          }
+        }
+
+        // If updating subcategories, ensure names are unique
+        if (subCategories) {
+          const subCategoryNames = subCategories.map((sub) => sub.name);
+          const uniqueSubCategoryNames = new Set(subCategoryNames);
+          if (uniqueSubCategoryNames.size !== subCategoryNames.length) {
+            throw new BadRequestError("Subcategory names must be unique within a category");
+          }
+        }
+
+        // Update fields
+        const updateData: Partial<CategoryRequest> = {};
+        if (name) updateData.name = name;
+        if (subCategories) updateData.subCategories = subCategories;
+        if (isActive !== undefined) updateData.isActive = isActive;
+
+        const updatedCategory = await linkModel.findByIdAndUpdate(
+          id,
+          { $set: updateData },
+          { new: true }
+        );
+
+        if (!updatedCategory) {
+          throw new BadRequestError("Failed to update category");
+        }
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "Category updated successfully",
+          data: updatedCategory,
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Update a category",
+        description: "Update a category's name, subcategories, or active status",
+      },
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        name: t.Optional(
+          t.String({
+            minLength: 1,
+            maxLength: 50,
+            error: "Category name must not exceed 50 characters",
+          })
+        ),
+        subCategories: t.Optional(
+          t.Array(
+            t.Object({
+              name: t.String({
+                minLength: 1,
+                maxLength: 50,
+                error: "Subcategory name is required and must not exceed 50 characters",
+              }),
+              icon: t.Optional(t.String()),
+              isActive: t.Optional(t.Boolean()),
+            })
+          )
+        ),
+        isActive: t.Optional(t.Boolean()),
+      }),
+    }
+  )
+  .delete(
+    "/:id",
+    async ({ params, query, set }) => {
+      try {
+        const { id } = params;
+        const { hardDelete } = query;
+
+        const category = await linkModel.findById(id);
+        if (!category) {
+          throw new BadRequestError("Category not found");
+        }
+
+        if (hardDelete === "true") {
+          // Hard delete
+          await linkModel.deleteOne({ _id: id });
+          set.status = 200;
+          return {
+            status: true,
+            message: "Category permanently deleted",
+          };
+        } else {
+          // Soft delete (set isActive to false)
+          const updatedCategory = await linkModel.findByIdAndUpdate(
+            id,
+            { isActive: false },
+            { new: true }
+          );
+          if (!updatedCategory) {
+            throw new BadRequestError("Failed to soft delete category");
+          }
+          set.status = 200;
+          return {
+            status: true,
+            message: "Category soft deleted successfully",
+            data: updatedCategory,
+          };
+        }
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Delete a category",
+        description: "Soft delete (set isActive to false) or hard delete a category",
+      },
+      params: t.Object({
+        id: t.String(),
+      }),
+      query: t.Object({
+        hardDelete: t.Optional(t.String({ pattern: "^(true|false)$" })),
+      }),
+    }
+  )
+
+
+
+  .post(
+  "/upload-image",
+  async ({ body, set }) => {
+    try {
+      const { image } = body;
+
+      // Validate image
+      if (!image || !(image instanceof File)) {
+        throw new BadRequestError("Image is required and must be a valid file");
+      }
+
+      // Save the image
+      const parentFolder = "industry-images";
+      const saveResult = await saveFile(image, parentFolder);
+
+      if (!saveResult.ok || !saveResult.filename) {
+        throw new BadRequestError("Failed to save image");
+      }
+
+      set.status = 201;
+      return {
+        success: true,
+        message: "Image uploaded successfully",
+        data: {
+          filename: saveResult.filename,
+        },
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: {
+      summary: "Upload Industry Image",
+      description: "Upload an image to the industry-images folder",
+    },
+    body: t.Object({
+      image: t.File({
+        type: ["image/png", "image/jpeg", "image/gif"],
+      }),
+    }),
+  }
+);

@@ -1,170 +1,220 @@
-import { BadRequestError } from "@/lib/shared/bad-request";
 import Elysia, { t } from "elysia";
+import { BadRequestError } from "@/lib/shared/bad-request";
 import { userAuthMacro } from "../user-macro";
 import { convertTime } from "@/lib/timeConversion";
 import { deleteFile, saveFile } from "@/lib/file";
 import { IndustryModel } from "@/schema/admin/industries-model";
+import { linkModel } from "@/schema/admin/link-model";
 import { UserModel } from "@/schema/user/user-model";
+import { Types } from "mongoose";
 
-interface UserResponse {
-    businessImages: boolean;
-    attachedLinks: boolean;
-    selectedIndustries: boolean;
-    profileImage: any;
-    businessDetails: any;
-    status: boolean;
-    message: string;
-    flags: {
-      businessDetails: boolean;
-      profilePicture: boolean;
-      selectedIndustries: boolean;
-      attachedLinks: boolean;
-      businessImages: boolean;
-    };
-    filledValues: {
-      businessDetails: {
-        companyName: string;
-        companyAddress: string;
-        companyMobile: string;
-        companyEmail: string;
-        companyWebsite: string;
-      };
-      profilePicture: string;
-      selectedIndustries: string[];
-      attachedLinks: string[];
-      businessImages: string[];
-    };
-  }
+// Interface for SubCategory
+interface SubCategory {
+  name: string;
+  icon?: string;
+  isActive?: boolean;
+}
 
+// Interface for Category (Links)
+interface Category extends Document {
+  name: string;
+  subCategories: SubCategory[];
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// Interface for Industry
+interface Industry extends Document {
+  title: string;
+  image: string;
+  tags: string[]; // Added tags field
+  isActive: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+// Interface for Create/Update Request Body
+interface CategoryRequest {
+  name: string;
+  subCategories: SubCategory[];
+  isActive?: boolean;
+}
+
+// Interface for Response
+interface CategoryResponse {
+  status: boolean;
+  message: string;
+  data?: Category | Category[];
+}
+// Interface for BusinessDetails
+interface BusinessDetails {
+  companyName: string;
+  companyAddress: string;
+  companyMobile: string;
+  companyEmail: string;
+  companyWebsite: string;
+}
+
+// Interface for SocialMedia
+interface SocialMedia {
+  facebook: string;
+  x: string;
+  whatsapp: string;
+  youtube: string;
+  instagram: string;
+}
+
+// Interface for User
+interface User extends Document {
+  username: string;
+  email: string;
+  role: string;
+  profileImage?: string;
+  lastLogin?: Date;
+  isActive: boolean;
+  permissions: string[];
+  isDeleted: boolean;
+  fcmToken?: string;
+  mobile?: string;
+  department?: string;
+  slug?: string;
+  businessDetails?: BusinessDetails;
+  socialMedia?: SocialMedia;
+  subscriptionPlan?: string;
+  selectedIndustries: Types.ObjectId[]; // Reference to IndustryModel
+  attachedLinks: Types.ObjectId[]; // Reference to linkModel
+  businessImages: string[];
+}
+
+
+// User Controller
 export const userController = new Elysia({
-    prefix: "/user",
-    tags: ["User"],
-  })
+  prefix: "/user",
+  tags: ["User"],
+})
   .use(userAuthMacro)
-  .guard({ isAuth: true }) 
-.get(
-  "/details",
-  async ({ query, set }) => {
-    try {
-      const { userId } = query;
+  .guard({ isAuth: true })
+  .get(
+    "/details",
+    async ({ query, set }) => {
+      try {
+        const { userId } = query;
 
-      if (!userId) {
-        throw new BadRequestError("User ID is required");
+        if (!userId) {
+          throw new BadRequestError("User ID is required");
+        }
+
+        const existingUser = await UserModel.findOne({
+          _id: userId,
+          isDeleted: false,
+        })
+          // .populate("selectedIndustries")
+          // .populate("attachedLinks");
+
+        if (!existingUser) {
+          throw new BadRequestError("User not found");
+        }
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "User retrieved successfully",
+          data: existingUser,
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
       }
-
-      const existingUser = await UserModel.findOne({
-        _id: userId,
-        isDeleted: false,
-      });
-
-      if (!existingUser) {
-        throw new BadRequestError("User not found");
-      }
-
-      set.status = 200;
-      return {
-        status: true,
-        message: "User retrieved successfully",
-        data: existingUser,
-      };
-    } catch (error) {
-      set.status = 400;
-      return {
-        status: false,
-        message: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  },
-  {
-    detail: {
-      summary: "Retrieve a user by user ID",
     },
-    query: t.Object({
-      userId: t.String(),
-    }),
-  }
-)
-.get(
-  "/flags",
-  async ({ query, set }) => {
-    try {
-      const { userId } = query;
-
-      if (!userId) {
-        throw new BadRequestError("User ID is required");
-      }
-      const existingUser = await UserModel.findOne({
-        _id: userId,
-        isDeleted: false,
-      }) as UserResponse;
-
-      if (!existingUser) {
-        throw new BadRequestError("User not found");
-      }
-
-      // Define flags and check their status
-      const businessDetailsFlag = !!(
-        existingUser.businessDetails &&
-        existingUser.businessDetails.companyName
-      );
-
-      const profilePictureFlag = !!existingUser.profileImage;
-
-      const selectedIndustriesFlag = !!(
-        existingUser.selectedIndustries &&
-        Array.isArray(existingUser.selectedIndustries) &&
-        existingUser.selectedIndustries.length > 0
-      );
-
-      const attachedLinksFlag = !!(
-        existingUser.attachedLinks &&
-        Array.isArray(existingUser.attachedLinks) &&
-        existingUser.attachedLinks.length > 0
-      );
-
-      const businessImagesFlag = !!(
-        existingUser.businessImages &&
-        Array.isArray(existingUser.businessImages) &&
-        existingUser.businessImages.length > 0
-      );
-
-      // Return results
-      set.status = 200;
-      return {
-        status: true,
-        message: "User retrieved successfully",
-        flags: {
-          businessDetails: businessDetailsFlag,
-          profilePicture: profilePictureFlag,
-          selectedIndustries: selectedIndustriesFlag,
-          attachedLinks: attachedLinksFlag,
-          businessImages: businessImagesFlag,
-        },
-       data: {
-          businessDetails: existingUser.businessDetails ?? {},
-          profilePicture: existingUser.profileImage ?? "",
-          selectedIndustries: existingUser.selectedIndustries ?? [],
-          attachedLinks: existingUser.attachedLinks ?? [],
-          businessImages: existingUser.businessImages ?? [],
-        },
-      };
-    } catch (error) {
-      set.status = 400;
-      return {
-        status: false,
-        message: error instanceof Error ? error.message : "Unknown error",
-      };
+    {
+      detail: {
+        summary: "Retrieve a user by user ID",
+      },
+      query: t.Object({
+        userId: t.String(),
+      }),
     }
-  },
-  {
-    detail: {
-      summary: "Retrieve a user by user ID and check specified flags",
+  )
+  .get(
+    "/flags",
+    async ({ query, set }) => {
+      try {
+        const { userId } = query;
+
+        if (!userId) {
+          throw new BadRequestError("User ID is required");
+        }
+
+        const existingUser = await UserModel.findOne({
+          _id: userId,
+          isDeleted: false,
+        })
+          .populate("selectedIndustries")
+          .populate("attachedLinks") as any;
+
+        if (!existingUser) {
+          throw new BadRequestError("User not found");
+        }
+
+        // Define flags and check their status
+        const businessDetailsFlag = !!(
+          existingUser.businessDetails &&
+          existingUser.businessDetails.companyName
+        );
+
+        const profilePictureFlag = !!existingUser.profileImage;
+
+        const selectedIndustriesFlag =
+          Array.isArray(existingUser.selectedIndustries) &&
+          existingUser.selectedIndustries.length > 0;
+
+        const attachedLinksFlag =
+          Array.isArray(existingUser.attachedLinks) &&
+          existingUser.attachedLinks.length > 0;
+
+        const businessImagesFlag =
+          Array.isArray(existingUser.businessImages) &&
+          existingUser.businessImages.length > 0;
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "User retrieved successfully",
+          flags: {
+            businessDetails: businessDetailsFlag,
+            profilePicture: profilePictureFlag,
+            selectedIndustries: selectedIndustriesFlag,
+            attachedLinks: attachedLinksFlag,
+            businessImages: businessImagesFlag,
+          },
+          data: {
+            businessDetails: existingUser.businessDetails ?? {},
+            profilePicture: existingUser.profileImage ?? "",
+            selectedIndustries: existingUser.selectedIndustries ?? [],
+            attachedLinks: existingUser.attachedLinks ?? [],
+            businessImages: existingUser.businessImages ?? [],
+          },
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
     },
-    query: t.Object({
-      userId: t.String(),
-    }),
-  }
-)
+    {
+      detail: {
+        summary: "Retrieve a user by user ID and check specified flags",
+      },
+      query: t.Object({
+        userId: t.String(),
+      }),
+    }
+  )
   .patch(
     "/business-details",
     async ({ query, body, set }) => {
@@ -224,33 +274,29 @@ export const userController = new Elysia({
       try {
         const { userId } = query;
         const { profileImage } = body;
-  
+
         if (!userId || !profileImage) {
           throw new BadRequestError("User ID and profile image are required");
         }
-  
-        // Find the user to get the existing profile image (if any)
+
         const user = await UserModel.findById(userId);
         if (!user) {
           throw new BadRequestError("User not found");
         }
-  
-        // Save the new profile image
+
         const parentFolder = "profile-images";
         const saveResult = saveFile(profileImage, parentFolder);
         if (!saveResult.ok || !saveResult.filename) {
           throw new BadRequestError("Failed to save profile image");
         }
-  
-        // Delete the old profile image if it exists
+
         if (user.profileImage) {
           const deleteResult = await deleteFile(user.profileImage, parentFolder);
           if (!deleteResult.ok) {
             console.warn(`Failed to delete old profile image: ${user.profileImage}`);
           }
         }
-  
-        // Update user with new profile image path and last updated time
+
         const updatedUser = await UserModel.findByIdAndUpdate(
           userId,
           {
@@ -259,13 +305,12 @@ export const userController = new Elysia({
           },
           { new: true }
         );
-  
+
         if (!updatedUser) {
-          // Cleanup: delete the newly saved file if user update fails
           await deleteFile(saveResult.filename, parentFolder);
           throw new BadRequestError("Failed to update user profile");
         }
- 
+
         set.status = 200;
         return {
           status: true,
@@ -288,104 +333,149 @@ export const userController = new Elysia({
         userId: t.String(),
       }),
       body: t.Object({
-        profileImage: t.Any(), // Blob or file input
+        profileImage: t.Any(),
       }),
     }
   )
-  .patch(
-    "/selected-industries",
-    async ({ query, body, set }) => {
-      try {
-        const { userId } = query;
-        const { selectedIndustries } = body;
+.patch(
+  "/selected-industries",
+  async ({ query, body, set }) => {
+    try {
+      const { userId } = query;
+      const { selectedIndustries } = body; // Expects: [{ industry: ObjectId, tags: string[] }]
 
-        if (!userId || !selectedIndustries) {
-          throw new BadRequestError("User ID and selected industries are required");
-        }
-
-        const updatedUser = await UserModel.findByIdAndUpdate(
-          userId,
-          { selectedIndustries },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-          throw new BadRequestError("User not found");
-        }
-
-        set.status = 200;
-        return {
-          status: true,
-          message: "Selected industries updated successfully",
-          data: (updatedUser as any).selectedIndustries,
-        };
-      } catch (error) {
-        set.status = 400;
-        return {
-          status: false,
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
+      if (!userId || !selectedIndustries) {
+        throw new BadRequestError("User ID and selected industries are required");
       }
-    },
-    {
-      detail: {
-        summary: "Update selected industries of a user",
-      },
-      query: t.Object({
-        userId: t.String(),
-      }),
-      body: t.Object({
-        selectedIndustries: t.Array(t.String()),
-      }),
-    }
-  )
-  .patch(
-    "/attached-links",
-    async ({ query, body, set }) => {
-      try {
-        const { userId } = query;
-        const { attachedLinks } = body;
 
-        if (!userId || !attachedLinks) {
-          throw new BadRequestError("User ID and attached links are required");
-        }
-
-        const updatedUser = await UserModel.findByIdAndUpdate(
-          userId,
-          { attachedLinks },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-          throw new BadRequestError("User not found");
-        }
-
-        set.status = 200;
-        return {
-          status: true,
-          message: "Attached links updated successfully",
-          data: (updatedUser as any).attachedLinks,
-        };
-      } catch (error) {
-        set.status = 400;
-        return {
-          status: false,
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
+      // Validate industries exist
+      const industryIds = selectedIndustries.map((item: any) => item.industry);
+      const industriesExist = await IndustryModel.find({ _id: { $in: industryIds } });
+      if (industriesExist.length !== industryIds.length) {
+        throw new BadRequestError("One or more industries not found");
       }
-    },
-    {
-      detail: {
-        summary: "Update attached links of a user",
-      },
-      query: t.Object({
-        userId: t.String(),
-      }),
-      body: t.Object({
-        attachedLinks: t.Array(t.String()),
-      }),
+
+      // Update the user's selectedIndustries (replaces the entire array)
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        userId,
+        { selectedIndustries }, // Directly assign the new array
+        { new: true }
+      ).populate("selectedIndustries.industry");
+
+      if (!updatedUser) {
+        throw new BadRequestError("User not found");
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Selected industries updated successfully",
+        data: updatedUser.selectedIndustries,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
     }
-  )
+  },
+  {
+    detail: { summary: "Update selected industries of a user" },
+    query: t.Object({ userId: t.String() }),
+    body: t.Object({
+      selectedIndustries: t.Array(
+        t.Object({
+          industry: t.String(), // ObjectId as string
+          tags: t.Array(t.String())
+        })
+      )
+    }),
+  }
+)
+
+.patch(
+  "/attached-links",
+  async ({ query, body, set }) => {
+    try {
+      const { userId } = query;
+      const { attachedLinks } = body;
+
+      if (!userId || !attachedLinks) {
+        throw new BadRequestError("User ID and attached links are required");
+      }
+
+      // Validate categories exist
+      const categoryIds = attachedLinks.map((item: any) => item.category);
+      const categoriesExist = await linkModel.find({ _id: { $in: categoryIds } });
+      if (categoriesExist.length !== categoryIds.length) {
+        throw new BadRequestError("One or more categories not found");
+      }
+
+      // Validate subcategories exist and belong to their parent category
+      for (const link of attachedLinks) {
+        const category = await linkModel.findById(link.category);
+        if (!category) continue;
+
+        for (const sub of link.subCategories) {
+          const subExists = category.subCategories.some(
+            (sc: any) => sc._id.toString() === sub.subCategoryId.toString()
+          );
+          if (!subExists) {
+            throw new BadRequestError(
+              `Subcategory ${sub.subCategoryId} not found in category ${link.category}`
+            );
+          }
+        }
+      }
+
+      // Update the user's attachedLinks
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        userId,
+        { attachedLinks },
+        { new: true }
+      ).populate({
+        path: 'attachedLinks.category',
+        model: 'Links'
+      });
+
+      if (!updatedUser) {
+        throw new BadRequestError("User not found");
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Attached links updated successfully",
+        data: updatedUser.attachedLinks,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Update attached links of a user" },
+    query: t.Object({ userId: t.String() }),
+    body: t.Object({
+      attachedLinks: t.Array(
+        t.Object({
+          category: t.String(), // Category ObjectId
+          subCategories: t.Array(
+            t.Object({
+              subCategoryId: t.String(), // SubCategory ObjectId
+              url: t.String()           // URL for the subcategory
+            })
+          )
+        })
+      )
+    }),
+  }
+)
+
   .patch(
     "/business-images",
     async ({ query, body, set }) => {
@@ -411,7 +501,7 @@ export const userController = new Elysia({
         return {
           status: true,
           message: "Business images updated successfully",
-          data: (updatedUser as any).businessImages ?? [],
+          data: updatedUser.businessImages ?? [],
         };
       } catch (error) {
         set.status = 400;
@@ -433,19 +523,48 @@ export const userController = new Elysia({
       }),
     }
   )
-
   .get(
-  "/",
+    "/industries",
+    async ({ set }) => {
+      try {
+        const industries = await IndustryModel.find().sort({ createdAt: -1 });
+
+        set.status = 200;
+        return {
+          success: true,
+          message: "Industries fetched successfully",
+          data: industries,
+        };
+      } catch (error) {
+        set.status = 500;
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Get All Industries",
+        description: "Fetch a list of all industries with their images and tags",
+      },
+    }
+  )
+  .get(
+  "/links",
   async ({ set }) => {
     try {
-      // Fetch all industries from the database
-      const industries = await IndustryModel.find().sort({ createdAt: -1 });
+      // Fetch all categories with subcategories, sorted by creation date (newest first)
+      const links = await linkModel
+        .find({ isActive: true }) // Optional: Only active categories
+        .sort({ createdAt: -1 })
+        .lean();
 
       set.status = 200;
       return {
         success: true,
-        message: "Industries fetched successfully",
-        data: industries,
+        message: "Links fetched successfully",
+        data: links,
       };
     } catch (error) {
       set.status = 500;
@@ -457,9 +576,56 @@ export const userController = new Elysia({
   },
   {
     detail: {
-      summary: "Get All Industries",
-      description: "Fetch a list of all industries with their images",
+      summary: "Get All Links",
+      description: "Fetch a list of all categories and their subcategories (e.g., Social, Technology)",
     },
   }
 )
 
+  .patch(
+    "/industry-tags",
+    async ({ query, body, set }) => {
+      try {
+        const { industryId } = query;
+        const { tags } = body;
+
+        if (!industryId || !tags) {
+          throw new BadRequestError("Industry ID and tags are required");
+        }
+
+        const updatedIndustry = await IndustryModel.findByIdAndUpdate(
+          industryId,
+          { tags },
+          { new: true }
+        );
+
+        if (!updatedIndustry) {
+          throw new BadRequestError("Industry not found");
+        }
+
+        set.status = 200;
+        return {
+          status: true,
+          message: "Industry tags updated successfully",
+          data: updatedIndustry.tags,
+        };
+      } catch (error) {
+        set.status = 400;
+        return {
+          status: false,
+          message: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    {
+      detail: {
+        summary: "Update tags for an industry",
+      },
+      query: t.Object({
+        industryId: t.String(),
+      }),
+      body: t.Object({
+        tags: t.Array(t.String()),
+      }),
+    }
+  )
