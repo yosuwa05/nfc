@@ -116,10 +116,14 @@ export const userController = new Elysia({
         }
 
         set.status = 200;
+        const { _id, ...rest } = existingUser.toObject();
         return {
           status: true,
           message: "User retrieved successfully",
-          data: existingUser,
+           data: {
+    ...rest,
+    userId: _id, // rename _id → userId
+  },
         };
       } catch (error) {
         set.status = 400;
@@ -215,59 +219,106 @@ export const userController = new Elysia({
       }),
     }
   )
-  .patch(
-    "/business-details",
-    async ({ query, body, set }) => {
-      try {
-        const { userId } = query;
-        const { businessDetails } = body;
+ .patch(
+  "/business-details",
+  async ({ query, body, set }) => {
+    try {
+      const { userId } = query;
+      const { businessDetails } = body;
 
-        if (!userId || !businessDetails) {
-          throw new BadRequestError("User ID and business details are required");
-        }
-
-        const updatedUser = await UserModel.findByIdAndUpdate(
-          userId,
-          { businessDetails },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-          throw new BadRequestError("User not found");
-        }
-
-        set.status = 200;
-        return {
-          status: true,
-          message: "Business details updated successfully",
-          data: updatedUser.businessDetails,
-        };
-      } catch (error) {
-        set.status = 400;
-        return {
-          status: false,
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
+      if (!userId || !businessDetails) {
+        throw new BadRequestError("User ID and business details are required");
       }
-    },
-    {
-      detail: {
-        summary: "Update business details of a user",
-      },
-      query: t.Object({
-        userId: t.String(),
-      }),
-      body: t.Object({
-        businessDetails: t.Object({
-          companyName: t.String(),
-          companyAddress: t.String(),
-          companyMobile: t.String(),
-          companyEmail: t.String(),
-          companyWebsite: t.String(),
-        }),
-      }),
+
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        throw new BadRequestError("User not found");
+      }
+
+      // Initialize with existing logo if no new logo provided
+      let logoFilename = user.businessDetails?.companyLogo;
+      let shouldUpdateLogo = false;
+
+      // Handle logo if provided in businessDetails
+      if (businessDetails.companyLogo) {
+        const parentFolder = "company-logos";
+        const saveResult = saveFile(businessDetails.companyLogo, parentFolder);
+
+        if (!saveResult.ok || !saveResult.filename) {
+          throw new BadRequestError("Failed to save company logo");
+        }
+
+        logoFilename = saveResult.filename;
+        shouldUpdateLogo = true;
+      }
+
+      // Prepare updated business details
+      const updatedBusinessDetails = {
+        ...businessDetails,
+        companyLogo: logoFilename // Use either new or existing logo
+      };
+
+      // Update user
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        userId,
+        {
+          businessDetails: updatedBusinessDetails,
+          updatedAt: convertTime(),
+        },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        // Clean up new logo if update failed
+        if (shouldUpdateLogo && logoFilename) {
+          await deleteFile(logoFilename, "company-logos");
+        }
+        throw new BadRequestError("Failed to update business details");
+      }
+
+      // Delete old logo if we successfully updated with a new one
+      if (shouldUpdateLogo && user.businessDetails?.companyLogo) {
+        const deleteResult = await deleteFile(user.businessDetails.companyLogo, "company-logos");
+        if (!deleteResult.ok) {
+          console.warn(`Failed to delete old company logo: ${user.businessDetails.companyLogo}`);
+        }
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Business details updated successfully",
+        data: updatedUser.businessDetails,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
     }
-  )
+  },
+  {
+    detail: {
+      summary: "Update business details of a user",
+      description: "Updates all business details including company logo (handles file upload and replacement)",
+    },
+    query: t.Object({
+      userId: t.String(),
+    }),
+    body: t.Object({
+      businessDetails: t.Object({
+        companyName: t.String(),
+        companyAddress: t.String(),
+        companyMobile: t.String(),
+        companyEmail: t.String(),
+        companyWebsite: t.String(),
+        companyLogo: t.Optional(t.Any()), 
+      }),
+    }),
+  }
+)
+
   .post(
     "/profile-image",
     async ({ query, body, set }) => {

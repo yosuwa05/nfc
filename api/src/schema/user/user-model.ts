@@ -34,6 +34,7 @@ interface BusinessDetails {
   companyMobile: string;
   companyEmail: string;
   companyWebsite: string;
+  companyLogo:string;
 }
 
 
@@ -43,6 +44,7 @@ const businessDetailsSchema = new Schema<BusinessDetails>({
   companyMobile: { type: String, default: '' },
   companyEmail: { type: String, default: '' },
   companyWebsite: { type: String, default: '' },
+  companyLogo:{ type: String, default: '' }
 });
 
 

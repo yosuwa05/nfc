@@ -104,7 +104,7 @@ export const userAuthController = new Elysia({
         status: true,
         isNewUser,
         data: {
-          _id: userData._id,
+          userId: userData._id,
           username: userData.username,
           mobile: userData.mobile,
           subscriptionPlan: userData.subscriptionPlan,
