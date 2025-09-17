@@ -163,7 +163,7 @@ export const userAuthController = new Elysia({
   async ({ body }) => {
     const { mobile, smsId } = body;
     // For demo account purpose
-    if (mobile === "9344676467") {
+    if (mobile === "9344676467"||mobile=="7448765578") {
       return {
         message: "OTP sent successfully",
         status: true,
@@ -228,10 +228,10 @@ export const userAuthController = new Elysia({
 .post(
   "/verify-otp",
   async ({ body }) => {
-    const { otpId, otpNo, mobileNumber } = body;
+    const { otpId, otpNo, mobile } = body;
 
     // Special handling for demo number
-    if (mobileNumber === "9344676467" && otpNo === "000000") {
+    if (mobile === "9344676467" && otpNo === "000000"||mobile=="7448765578" && otpNo === "000000") {
       return {
         message: "OTP verified successfully",
         status: true,
@@ -246,7 +246,7 @@ export const userAuthController = new Elysia({
       });
 
       if (response.data.status) {
-        const existingUser = await UserModel.findOne({ mobileNumber, isDeleted: false });
+        const existingUser = await UserModel.findOne({ mobile, isDeleted: false });
         return {
           message: "OTP verified successfully",
           status: true,
@@ -270,7 +270,7 @@ export const userAuthController = new Elysia({
     body: t.Object({
       otpId: t.String(),
       otpNo: t.String({ minLength: 4, maxLength: 6 }),
-      mobileNumber: t.String(),
+      mobile: t.String(),
     }),
     detail: {
       summary: "Verify OTP provided by the user",
