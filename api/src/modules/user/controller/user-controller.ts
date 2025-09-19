@@ -527,53 +527,90 @@ export const userController = new Elysia({
   }
 )
 
-  .patch(
-    "/business-images",
-    async ({ query, body, set }) => {
-      try {
-        const { userId } = query;
-        const { businessImages } = body;
+.patch(
+  "/business-images",
+  async ({ query, body, set }) => {
+    try {
+      const { userId } = query;
+      const { businessImages } = body;
 
-        if (!userId || !businessImages) {
-          throw new BadRequestError("User ID and business images are required");
-        }
-
-        const updatedUser = await UserModel.findByIdAndUpdate(
-          userId,
-          { businessImages },
-          { new: true }
-        );
-
-        if (!updatedUser) {
-          throw new BadRequestError("User not found");
-        }
-
-        set.status = 200;
-        return {
-          status: true,
-          message: "Business images updated successfully",
-          data: updatedUser.businessImages ?? [],
-        };
-      } catch (error) {
-        set.status = 400;
-        return {
-          status: false,
-          message: error instanceof Error ? error.message : "Unknown error",
-        };
+      if (!userId || !businessImages) {
+        throw new BadRequestError("User ID and business images are required");
       }
-    },
-    {
-      detail: {
-        summary: "Update business images of a user",
-      },
-      query: t.Object({
-        userId: t.String(),
-      }),
-      body: t.Object({
-        businessImages: t.Array(t.String()),
-      }),
+
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        throw new BadRequestError("User not found");
+      }
+
+      const parentFolder = "business-images";
+      const savedFilenames: string[] = [];
+      const oldFilenames = user.businessImages || [];
+
+      // Save new images and track successful uploads
+      for (const image of businessImages) {
+        const saveResult = await saveFile(image, parentFolder);
+        if (!saveResult.ok || !saveResult.filename) {
+          // Clean up any already saved files if one fails
+          for (const filename of savedFilenames) {
+            await deleteFile(filename, parentFolder);
+          }
+          throw new BadRequestError("Failed to save business images");
+        }
+        savedFilenames.push(saveResult.filename);
+      }
+
+      // Update user with new image filenames
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        userId,
+        { businessImages: savedFilenames },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        // Clean up new images if update failed
+        for (const filename of savedFilenames) {
+          await deleteFile(filename, parentFolder);
+        }
+        throw new BadRequestError("Failed to update business images");
+      }
+
+      // Delete old images after successful update
+      for (const oldFilename of oldFilenames) {
+        const deleteResult = await deleteFile(oldFilename, parentFolder);
+        if (!deleteResult.ok) {
+          console.warn(`Failed to delete old business image: ${oldFilename}`);
+        }
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Business images updated successfully",
+        data: updatedUser.businessImages ?? [],
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
     }
-  )
+  },
+  {
+    detail: {
+      summary: "Update business images of a user",
+      description: "Handles file upload, replacement, and cleanup for business images",
+    },
+    query: t.Object({
+      userId: t.String(),
+    }),
+    body: t.Object({
+      businessImages: t.Array(t.Any()), // Changed from t.String() to t.Any() to accept file data
+    }),
+  }
+)
+
   .get(
     "/industries",
     async ({ set }) => {

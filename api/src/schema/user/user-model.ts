@@ -15,6 +15,7 @@ interface User extends Document {
   slug?: string;
   businessDetails?: BusinessDetails;
   subscriptionPlan?: string;
+  businessImages?: string[];
   selectedIndustries: Array<{
     industry: Types.ObjectId; // Reference to Industry
     tags: string[];           // Custom tags for this industry
@@ -103,6 +104,7 @@ const userSchema = new Schema<User>(
     subscriptionPlan: { type: String, enum: ['basic', 'pro', 'pro+'], default: 'basic' },
     slug: { type: String, unique: true, default: '' },
     businessDetails: { type: businessDetailsSchema, default: {} },
+        businessImages: { type: [String], default: [] },
   },
   { timestamps: true }
 );

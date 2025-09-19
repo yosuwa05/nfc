@@ -1,54 +1,60 @@
-import { unlinkSync } from "node:fs";
+import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
-export const saveFile = (blob: Blob | undefined, parentFolder: string) => {
+export const saveFile = async (blob: Blob | undefined, parentFolder: string) => {
   try {
     if (!blob) {
       return { ok: false, filename: "" };
     }
 
+    // Preserve original MIME type
     const newBlob = new Blob([blob], {
-      type: "image/png",
+      type: blob.type || "application/octet-stream",
     });
 
-    let hash =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
+    // Generate unique filename
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const extension = blob.name.split('.').pop() || 'bin';
+    const filename = `uploads/${parentFolder}/${timestamp}-${randomStr}.${extension}`;
 
-    let filename =
-      "uploads/" + parentFolder + "/" + hash + "." + blob.name.split('.').pop();
-//@ts-ignore
-    Bun.write(filename, newBlob);
+    // Ensure directory exists
+    const dir = path.join('uploads', parentFolder);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+
+    // Get array buffer and write file
+    const arrayBuffer = await newBlob.arrayBuffer();
+    writeFileSync(filename, Buffer.from(arrayBuffer));
 
     return { ok: true, filename };
   } catch (error) {
-    console.error(error);
+    console.error("Error saving file:", error);
     return { ok: false, filename: "" };
   }
 };
 
+export const deliverFile = (filename: string) => {
+  return `http://localhost:4000/view/${filename}`;
+};
 
-  export const deliverFile = (filename: any) => {
-  return  `http://localhost:4000/view`;
-  };
+export const deleteFile = async (filename: string, parentFolder: string) => {
+  try {
+    console.log(`Attempting to delete file: ${filename}`);
 
-  export const deleteFile = async (filename: string, parentFolder: string) => {
-    try {
-      // The filename is already in the correct format: uploads/parentFolder/hash.extension
-      console.log(`Attempting to delete file: ${filename}`);
-      
-      // Verify that the parentFolder matches the filename's folder
-      const parts = filename.split('/');
-      if (parts.length !== 3 || parts[0] !== 'uploads' || parts[1] !== parentFolder) {
-        throw new Error(`Invalid filename format: ${filename}. Expected format: uploads/${parentFolder}/hash.extension`);
-      }
-      //@ts-ignore
-      // Use asynchronous unlink
-      await fs.unlink(filename);
-      console.log(`Successfully deleted file: ${filename}`);
-      return { ok: true };
-    } catch (error) {
-      console.error(`Error deleting file ${filename}:`, error);
-      return { ok: false };
+    // Verify filename format
+    const parts = filename.split('/');
+    if (parts.length !== 3 || parts[0] !== 'uploads' || parts[1] !== parentFolder) {
+      throw new Error(`Invalid filename format: ${filename}`);
     }
-  };
 
+    await fs.unlink(filename);
+    console.log(`Successfully deleted file: ${filename}`);
+    return { ok: true };
+  } catch (error) {
+    console.error(`Error deleting file ${filename}:`, error);
+    return { ok: false };
+  }
+};
