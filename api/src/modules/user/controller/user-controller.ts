@@ -219,15 +219,15 @@ export const userController = new Elysia({
       }),
     }
   )
- .patch(
+.patch(
   "/business-details",
   async ({ query, body, set }) => {
     try {
       const { userId } = query;
-      const { businessDetails } = body;
+      const { companyName, companyAddress, companyMobile, companyEmail, companyWebsite, companyLogo } = body;
 
-      if (!userId || !businessDetails) {
-        throw new BadRequestError("User ID and business details are required");
+      if (!userId || !companyName || !companyAddress || !companyMobile || !companyEmail || !companyWebsite) {
+        throw new BadRequestError("User ID and all company details are required");
       }
 
       const user = await UserModel.findById(userId);
@@ -239,22 +239,34 @@ export const userController = new Elysia({
       let logoFilename = user.businessDetails?.companyLogo;
       let shouldUpdateLogo = false;
 
-      // Handle logo if provided in businessDetails
-      if (businessDetails.companyLogo) {
+      // Handle logo based on input type
+      if (companyLogo) {
         const parentFolder = "company-logos";
-        const saveResult = saveFile(businessDetails.companyLogo, parentFolder);
 
-        if (!saveResult.ok || !saveResult.filename) {
-          throw new BadRequestError("Failed to save company logo");
+        if (typeof companyLogo === 'string') {
+          // If companyLogo is a string, store it directly
+          logoFilename = companyLogo;
+          shouldUpdateLogo = true;
+        } else {
+          // Assume companyLogo is an image that needs to be converted to a file
+          const saveResult = saveFile(companyLogo, parentFolder);
+
+          if (!saveResult.ok || !saveResult.filename) {
+            throw new BadRequestError("Failed to save company logo");
+          }
+
+          logoFilename = saveResult.filename;
+          shouldUpdateLogo = true;
         }
-
-        logoFilename = saveResult.filename;
-        shouldUpdateLogo = true;
       }
 
       // Prepare updated business details
       const updatedBusinessDetails = {
-        ...businessDetails,
+        companyName,
+        companyAddress,
+        companyMobile,
+        companyEmail,
+        companyWebsite,
         companyLogo: logoFilename // Use either new or existing logo
       };
 
@@ -269,8 +281,8 @@ export const userController = new Elysia({
       );
 
       if (!updatedUser) {
-        // Clean up new logo if update failed
-        if (shouldUpdateLogo && logoFilename) {
+        // Clean up new logo if update failed and it was a file upload
+        if (shouldUpdateLogo && logoFilename && typeof companyLogo !== 'string') {
           await deleteFile(logoFilename, "company-logos");
         }
         throw new BadRequestError("Failed to update business details");
@@ -301,24 +313,21 @@ export const userController = new Elysia({
   {
     detail: {
       summary: "Update business details of a user",
-      description: "Updates all business details including company logo (handles file upload and replacement)",
+      description: "Updates all business details including company logo (handles both direct string storage and file upload/replacement)",
     },
     query: t.Object({
       userId: t.String(),
     }),
     body: t.Object({
-      businessDetails: t.Object({
-        companyName: t.String(),
-        companyAddress: t.String(),
-        companyMobile: t.String(),
-        companyEmail: t.String(),
-        companyWebsite: t.String(),
-        companyLogo: t.Optional(t.Any()), 
-      }),
+      companyName: t.String(),
+      companyAddress: t.String(),
+      companyMobile: t.String(),
+      companyEmail: t.String(),
+      companyWebsite: t.String(),
+      companyLogo: t.Optional(t.Any()), // Can be string or file
     }),
   }
 )
-
   .post(
     "/profile-image",
     async ({ query, body, set }) => {
@@ -534,8 +543,8 @@ export const userController = new Elysia({
       const { userId } = query;
       const { businessImages } = body;
 
-      if (!userId || !businessImages) {
-        throw new BadRequestError("User ID and business images are required");
+      if (!userId || !businessImages || !Array.isArray(businessImages)) {
+        throw new BadRequestError("User ID and business images array are required");
       }
 
       const user = await UserModel.findById(userId);
@@ -547,30 +556,46 @@ export const userController = new Elysia({
       const savedFilenames: string[] = [];
       const oldFilenames = user.businessImages || [];
 
-      // Save new images and track successful uploads
+      // Process each image in the businessImages array
       for (const image of businessImages) {
-        const saveResult = await saveFile(image, parentFolder);
-        if (!saveResult.ok || !saveResult.filename) {
-          // Clean up any already saved files if one fails
-          for (const filename of savedFilenames) {
-            await deleteFile(filename, parentFolder);
+        let filename: string;
+
+        if (typeof image === 'string') {
+          // If image is a string, store it directly
+          filename = image;
+        } else {
+          // Assume image is a file and needs to be converted
+          const saveResult = await saveFile(image, parentFolder);
+          if (!saveResult.ok || !saveResult.filename) {
+            // Clean up any already saved files if one fails
+            for (const savedFilename of savedFilenames) {
+              if (savedFilename !== image) { // Only delete if it was a file, not a string
+                await deleteFile(savedFilename, parentFolder);
+              }
+            }
+            throw new BadRequestError("Failed to save business image");
           }
-          throw new BadRequestError("Failed to save business images");
+          filename = saveResult.filename;
         }
-        savedFilenames.push(saveResult.filename);
+        savedFilenames.push(filename);
       }
 
       // Update user with new image filenames
       const updatedUser = await UserModel.findByIdAndUpdate(
         userId,
-        { businessImages: savedFilenames },
+        { 
+          businessImages: savedFilenames,
+          updatedAt: convertTime(),
+        },
         { new: true }
       );
 
       if (!updatedUser) {
         // Clean up new images if update failed
         for (const filename of savedFilenames) {
-          await deleteFile(filename, parentFolder);
+          if (businessImages[savedFilenames.indexOf(filename)] !== filename) { // Only delete if it was a file
+            await deleteFile(filename, parentFolder);
+          }
         }
         throw new BadRequestError("Failed to update business images");
       }
@@ -600,13 +625,13 @@ export const userController = new Elysia({
   {
     detail: {
       summary: "Update business images of a user",
-      description: "Handles file upload, replacement, and cleanup for business images",
+      description: "Handles both direct string storage and file upload/replacement for business images, with cleanup of old images",
     },
     query: t.Object({
       userId: t.String(),
     }),
     body: t.Object({
-      businessImages: t.Array(t.Any()), // Changed from t.String() to t.Any() to accept file data
+      businessImages: t.Array(t.Any()), // Accepts both strings and files
     }),
   }
 )

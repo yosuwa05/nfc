@@ -1,9 +1,10 @@
 import { Elysia, t } from "elysia";
 import QRCode from "qrcode";
+import sharp from 'sharp'; // Use sharp instead
 import { BadRequestError } from "@/lib/shared/bad-request";
 import { userAuthMacro } from "../user-macro";
 
-import { promises as fs } from "fs"; // Node.js File System (promises API)
+import { promises as fs } from "fs";
 import path from "path";
 import { UserModel } from "@/schema/user/user-model";
 
@@ -11,36 +12,33 @@ import { UserModel } from "@/schema/user/user-model";
 interface QRResponse {
   status: boolean;
   message: string;
-  qrCode?: string; // Base64-encoded PNG data URI
-  userData?: string; // The encoded data for verification
-  filePath?: string; // Path to saved QR code file (if saved)
+  qrCode?: string;
+  userData?: string;
+  filePath?: string;
 }
-const PLACEHOLDER_IMAGE_PATH = path.join(__dirname, 'qr', 'placeholder-profile.png'); // Adjust as needed
+
+const PLACEHOLDER_IMAGE_PATH = path.join(__dirname, 'qrcodes', 'user-dummy.jpeg');
 
 export const qrController = new Elysia({
   prefix: "/qr",
   tags: ["QR"],
 })
-//   .use(userAuthMacro)
-//   .guard({ isAuth: true })
 .get(
   "/generate/:userId",
   async ({ params: { userId }, query: { save }, set }) => {
     try {
-      // Validate userId
       if (!userId) {
         throw new BadRequestError("User ID is required");
       }
 
-      // Fetch user data - CORRECTED populate paths
       const user = await UserModel.findById(userId)
         .select("username email mobile businessDetails selectedIndustries attachedLinks profileImage slug")
         .populate({
-          path: "selectedIndustries.industry", // CORRECTED: industry instead of industryId
+          path: "selectedIndustries.industry",
           model: "Industry",
         })
         .populate({
-          path: "attachedLinks.category", // CORRECTED: category instead of categoryId
+          path: "attachedLinks.category",
           model: "Links",
         });
 
@@ -48,11 +46,13 @@ export const qrController = new Elysia({
         throw new BadRequestError("User not found");
       }
 
-      // Use the slug from the schema
+      if (!user.slug) {
+  throw new BadRequestError("Please fill all the details to generate the QR code. Slug is missing.");
+}
+
       const profileSlug = user.slug || user.username.toLowerCase().replace(/\s+/g, '-');
       const qrData = `https://kingschic.com/profile?slug=${profileSlug}`;
 
-      // Determine logo path
       let logoPath: string;
       if (user.profileImage) {
         logoPath = user.profileImage.startsWith('http') 
@@ -62,7 +62,6 @@ export const qrController = new Elysia({
         logoPath = PLACEHOLDER_IMAGE_PATH;
       }
 
-      // Generate QR code
       const qrBuffer = await QRCode.toBuffer(qrData, {
         errorCorrectionLevel: "H",
         type: "png",
@@ -75,20 +74,34 @@ export const qrController = new Elysia({
         width: 256,
       });
 
-      // Use Jimp to overlay the logo
-      const qrImage = await Jimp.read(qrBuffer);
-      const logoImage = await Jimp.read(logoPath);
+      // Use sharp instead of Jimp
+      const qrImage = sharp(qrBuffer);
+      const logoImage = sharp(logoPath);
 
-      const logoSize = Math.floor(qrImage.bitmap.width * 0.2);
-      logoImage.resize(logoSize, logoSize);
-      logoImage.circle();
+      const logoSize = Math.floor(256 * 0.2); // 20% of QR size
 
-      const x = (qrImage.bitmap.width - logoSize) / 2;
-      const y = (qrImage.bitmap.height - logoSize) / 2;
+      // Create circular mask for the logo
+      const circleSvg = Buffer.from(
+        `<svg><circle cx="${logoSize/2}" cy="${logoSize/2}" r="${logoSize/2}" fill="black"/></svg>`
+      );
 
-      qrImage.composite(logoImage, x, y);
+      const logoResized = await logoImage
+        .resize(logoSize, logoSize, { fit: 'cover' })
+        .composite([{
+          input: circleSvg,
+          blend: 'dest-in'
+        }])
+        .toBuffer();
 
-      const qrBase64 = await qrImage.getBase64Async(Jimp.MIME_PNG);
+      const x = Math.floor((256 - logoSize) / 2);
+      const y = Math.floor((256 - logoSize) / 2);
+
+      const finalImage = await qrImage
+        .composite([{ input: logoResized, top: y, left: x }])
+        .png()
+        .toBuffer();
+
+      const qrBase64 = `data:image/png;base64,${finalImage.toString('base64')}`;
 
       const response: QRResponse = {
         status: true,
@@ -97,7 +110,6 @@ export const qrController = new Elysia({
         userData: qrData,
       };
 
-      // Save to local filesystem if save=true
       if (save === "true") {
         const qrDir = path.join(__dirname, "qrcodes");
         const fileName = `qr_${userId}_${Date.now()}.png`;
@@ -109,7 +121,8 @@ export const qrController = new Elysia({
           throw new Error("Failed to create QR code directory");
         }
 
-        await qrImage.writeAsync(filePath);
+        // Save the final image
+        await fs.writeFile(filePath, finalImage);
         response.filePath = filePath;
         response.message = "QR code generated and saved successfully";
       }
@@ -139,9 +152,9 @@ export const qrController = new Elysia({
       save: t.Optional(t.String({ pattern: "^(true|false)$" })),
     }),
   }
-)
+);
 
-  async function downloadImage(url: string, filename: string): Promise<string> {
+async function downloadImage(url: string, filename: string): Promise<string> {
   const https = require('https');
   const fs = require('fs');
   return new Promise((resolve, reject) => {
@@ -153,7 +166,7 @@ export const qrController = new Elysia({
         resolve(filename);
       });
     }).on('error', (err: any) => {
-      fs.unlink(filename, () => {}); // Delete partial file
+      fs.unlink(filename, () => {});
       reject(err);
     });
   });
