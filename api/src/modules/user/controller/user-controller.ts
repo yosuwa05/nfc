@@ -7,6 +7,7 @@ import { IndustryModel } from "@/schema/admin/industries-model";
 import { linkModel } from "@/schema/admin/link-model";
 import { UserModel } from "@/schema/user/user-model";
 import { Types } from "mongoose";
+import { FollowModel } from "@/schema/user/follow-model";
 
 // Interface for SubCategory
 interface SubCategory {
@@ -235,42 +236,38 @@ export const userController = new Elysia({
         throw new BadRequestError("User not found");
       }
 
-      // Initialize with existing logo if no new logo provided
       let logoFilename = user.businessDetails?.companyLogo;
-      let shouldUpdateLogo = false;
+      let oldLogo = user.businessDetails?.companyLogo;
+      let uploadedNewFile = false;
 
-      // Handle logo based on input type
       if (companyLogo) {
         const parentFolder = "company-logos";
 
-        if (typeof companyLogo === 'string') {
-          // If companyLogo is a string, store it directly
+        if (typeof companyLogo === "string") {
+          // Just store the string directly (could be existing filename or external URL)
           logoFilename = companyLogo;
-          shouldUpdateLogo = true;
         } else {
-          // Assume companyLogo is an image that needs to be converted to a file
-          const saveResult = saveFile(companyLogo, parentFolder);
+          // Handle file upload
+          const saveResult = await saveFile(companyLogo, parentFolder);
 
           if (!saveResult.ok || !saveResult.filename) {
             throw new BadRequestError("Failed to save company logo");
           }
 
           logoFilename = saveResult.filename;
-          shouldUpdateLogo = true;
+          uploadedNewFile = true;
         }
       }
 
-      // Prepare updated business details
       const updatedBusinessDetails = {
         companyName,
         companyAddress,
         companyMobile,
         companyEmail,
         companyWebsite,
-        companyLogo: logoFilename // Use either new or existing logo
+        companyLogo: logoFilename,
       };
 
-      // Update user
       const updatedUser = await UserModel.findByIdAndUpdate(
         userId,
         {
@@ -281,18 +278,18 @@ export const userController = new Elysia({
       );
 
       if (!updatedUser) {
-        // Clean up new logo if update failed and it was a file upload
-        if (shouldUpdateLogo && logoFilename && typeof companyLogo !== 'string') {
+        // Cleanup uploaded file if DB update failed
+        if (uploadedNewFile && logoFilename) {
           await deleteFile(logoFilename, "company-logos");
         }
         throw new BadRequestError("Failed to update business details");
       }
 
-      // Delete old logo if we successfully updated with a new one
-      if (shouldUpdateLogo && user.businessDetails?.companyLogo) {
-        const deleteResult = await deleteFile(user.businessDetails.companyLogo, "company-logos");
+      // Delete old logo only if a new file replaced it
+      if (uploadedNewFile && oldLogo) {
+        const deleteResult = await deleteFile(oldLogo, "company-logos");
         if (!deleteResult.ok) {
-          console.warn(`Failed to delete old company logo: ${user.businessDetails.companyLogo}`);
+          console.warn(`⚠️ Failed to delete old company logo: ${oldLogo}`);
         }
       }
 
@@ -313,7 +310,8 @@ export const userController = new Elysia({
   {
     detail: {
       summary: "Update business details of a user",
-      description: "Updates all business details including company logo (handles both direct string storage and file upload/replacement)",
+      description:
+        "Updates all business details including company logo (stores string directly if provided, or saves file if uploaded)",
     },
     query: t.Object({
       userId: t.String(),
@@ -324,10 +322,11 @@ export const userController = new Elysia({
       companyMobile: t.String(),
       companyEmail: t.String(),
       companyWebsite: t.String(),
-      companyLogo: t.Optional(t.Any()), // Can be string or file
+      companyLogo: t.Optional(t.Any()), 
     }),
   }
 )
+
   .post(
     "/profile-image",
     async ({ query, body, set }) => {
@@ -742,3 +741,248 @@ export const userController = new Elysia({
       }),
     }
   )
+
+.post(
+  "/follow",
+  async ({ query, set }) => {
+    try {
+      const { followerId, followingId } = query;
+
+      if (!followerId || !followingId) {
+        throw new BadRequestError("Follower ID and Following ID are required");
+      }
+
+      if (followerId === followingId) {
+        throw new BadRequestError("You cannot follow yourself");
+      }
+
+      // Check if follow already exists
+      const existingFollow = await FollowModel.findOne({
+        follower: followerId,
+        following: followingId,
+      });
+
+      if (existingFollow) {
+        throw new BadRequestError("Already following this user");
+      }
+
+      // Create follow record
+      await FollowModel.create({
+        follower: followerId,
+        following: followingId,
+        status: "active",
+      });
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "User followed successfully",
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Follow a user" },
+    query: t.Object({
+      followerId: t.String(),
+      followingId: t.String(),
+    }),
+  }
+)
+.delete(
+  "/unfollow",
+  async ({ query, set }) => {
+    try {
+      const { followerId, followingId } = query;
+
+      if (!followerId || !followingId) {
+        throw new BadRequestError("Follower ID and Following ID are required");
+      }
+
+      const follow = await FollowModel.findOneAndDelete({
+        follower: followerId,
+        following: followingId,
+      });
+
+      if (!follow) {
+        throw new BadRequestError("Not following this user");
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Unfollowed user successfully",
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Unfollow a user" },
+    query: t.Object({
+      followerId: t.String(),
+      followingId: t.String(),
+    }),
+  }
+)
+.get(
+  "/follow-stats",
+  async ({ query, set }) => {
+    try {
+      const { userId } = query;
+
+      if (!userId) {
+        throw new BadRequestError("User ID is required");
+      }
+
+      // Count followers and followings
+      const followersCount = await FollowModel.countDocuments({
+        following: userId,
+        status: "active",
+      });
+
+      const followingCount = await FollowModel.countDocuments({
+        follower: userId,
+        status: "active",
+      });
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Follow stats retrieved successfully",
+        data: {
+          followers: followersCount,
+          following: followingCount,
+        },
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get follower & following count for a user" },
+    query: t.Object({
+      userId: t.String(),
+    }),
+  }
+)
+.get(
+  "/followers",
+  async ({ query, set }) => {
+    try {
+      const { userId, search } = query;
+
+      if (!userId) {
+        throw new BadRequestError("User ID is required");
+      }
+
+      // Find all followerIds (users who follow this user)
+      const follows = await FollowModel.find({ following: userId, status: "active" })
+        .select("follower -_id")
+        .lean();
+
+      const followerIds = follows.map(f => f.follower);
+
+      // Optimized: Fetch only needed user fields
+      const searchFilter = search
+        ? {
+            _id: { $in: followerIds },
+            $or: [
+              { username: { $regex: search, $options: "i" } },
+              { email: { $regex: search, $options: "i" } },
+            ],
+          }
+        : { _id: { $in: followerIds } };
+
+      const followers = await UserModel.find(searchFilter)
+        .select("username email profileImage role") // limit fields
+        .lean();
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Followers fetched successfully",
+        data: followers,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get list of followers" },
+    query: t.Object({
+      userId: t.String(),
+      search: t.Optional(t.String()),
+    }),
+  }
+)
+.get(
+  "/following",
+  async ({ query, set }) => {
+    try {
+      const { userId, search } = query;
+
+      if (!userId) {
+        throw new BadRequestError("User ID is required");
+      }
+
+      // Find all followingIds (users this user follows)
+      const follows = await FollowModel.find({ follower: userId, status: "active" })
+        .select("following -_id")
+        .lean();
+
+      const followingIds = follows.map(f => f.following);
+
+      const searchFilter = search
+        ? {
+            _id: { $in: followingIds },
+            $or: [
+              { username: { $regex: search, $options: "i" } },
+              { email: { $regex: search, $options: "i" } },
+            ],
+          }
+        : { _id: { $in: followingIds } };
+
+      const following = await UserModel.find(searchFilter)
+        .select("username email profileImage role")
+        .lean();
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Following fetched successfully",
+        data: following,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get list of following" },
+    query: t.Object({
+      userId: t.String(),
+      search: t.Optional(t.String()),
+    }),
+  }
+)
