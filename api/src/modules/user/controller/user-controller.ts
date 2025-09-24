@@ -8,6 +8,7 @@ import { linkModel } from "@/schema/admin/link-model";
 import { UserModel } from "@/schema/user/user-model";
 import { Types } from "mongoose";
 import { FollowModel } from "@/schema/user/follow-model";
+import { ProfileVisitorModel } from "@/schema/user/profileVisit-model";
 
 // Interface for SubCategory
 interface SubCategory {
@@ -1000,17 +1001,26 @@ export const userController = new Elysia({
         throw new BadRequestError("You cannot visit your own profile");
       }
 
-      // Increment visit count
-      const updatedUser = await UserModel.findByIdAndUpdate(
-        profileId,
-        {
+      // Check if viewer has already visited this profile
+      const existingVisit = await ProfileVisitorModel.findOne({ profileId, viewerId });
+
+      if (!existingVisit) {
+        // Record new visit
+        await ProfileVisitorModel.create({ profileId, viewerId });
+
+        // Increment unique profile views
+        await UserModel.findByIdAndUpdate(profileId, {
           $inc: { profileViews: 1 },
-          $push: {
-            profileVisitors: { userId: viewerId, visitedAt: new Date() },
-          },
-        },
-        { new: true }
-      ).select("username email profileViews");
+        });
+      } else {
+        // Update last visit timestamp
+        existingVisit.visitedAt = new Date();
+        await existingVisit.save();
+      }
+
+      const updatedUser = await UserModel.findById(profileId)
+        .select("username email profileViews")
+        .lean();
 
       if (!updatedUser) {
         throw new BadRequestError("Profile not found");
@@ -1036,8 +1046,8 @@ export const userController = new Elysia({
   {
     detail: { summary: "Record a profile visit" },
     query: t.Object({
-      profileId: t.String(), // whose profile
-      viewerId: t.Optional(t.String()), // who visited (optional if you don’t track visitors)
+      profileId: t.String(),
+      viewerId: t.String(),
     }),
   }
 )

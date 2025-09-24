@@ -58,14 +58,6 @@ const userSchema = new Schema<User>(
     type: Number,
     default: 0,
   },
-
-  // (optional) to track who visited:
-  profileVisitors: [
-    {
-      userId: { type: Schema.Types.ObjectId, ref: "User" },
-      visitedAt: { type: Date, default: Date.now },
-    },
-  ],
     isDeleted: { type: Boolean, default: false },
     email: { type: String, unique: true, lowercase: true, default: '' },
     profileImage: { type: String, default: '' },
