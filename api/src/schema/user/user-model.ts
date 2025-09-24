@@ -15,6 +15,8 @@ interface User extends Document {
   slug?: string;
   businessDetails?: BusinessDetails;
   subscriptionPlan?: string;
+  profileViews?: number;
+   profileVisitors?: number;
   businessImages?: string[];
   selectedIndustries: Array<{
     industry: Types.ObjectId; // Reference to Industry
@@ -52,6 +54,18 @@ const businessDetailsSchema = new Schema<BusinessDetails>({
 const userSchema = new Schema<User>(
   {
     username: { type: String, default: ''},
+     profileViews: {
+    type: Number,
+    default: 0,
+  },
+
+  // (optional) to track who visited:
+  profileVisitors: [
+    {
+      userId: { type: Schema.Types.ObjectId, ref: "User" },
+      visitedAt: { type: Date, default: Date.now },
+    },
+  ],
     isDeleted: { type: Boolean, default: false },
     email: { type: String, unique: true, lowercase: true, default: '' },
     profileImage: { type: String, default: '' },

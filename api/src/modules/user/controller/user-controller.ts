@@ -986,3 +986,93 @@ export const userController = new Elysia({
     }),
   }
 )
+.post(
+  "/profile-visit",
+  async ({ query, set }) => {
+    try {
+      const { viewerId, profileId } = query;
+
+      if (!profileId) {
+        throw new BadRequestError("Profile ID is required");
+      }
+
+      if (viewerId === profileId) {
+        throw new BadRequestError("You cannot visit your own profile");
+      }
+
+      // Increment visit count
+      const updatedUser = await UserModel.findByIdAndUpdate(
+        profileId,
+        {
+          $inc: { profileViews: 1 },
+          $push: {
+            profileVisitors: { userId: viewerId, visitedAt: new Date() },
+          },
+        },
+        { new: true }
+      ).select("username email profileViews");
+
+      if (!updatedUser) {
+        throw new BadRequestError("Profile not found");
+      }
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Profile visit recorded",
+        data: {
+          profileId,
+          profileViews: updatedUser.profileViews,
+        },
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Record a profile visit" },
+    query: t.Object({
+      profileId: t.String(), // whose profile
+      viewerId: t.Optional(t.String()), // who visited (optional if you don’t track visitors)
+    }),
+  }
+)
+.get(
+  "/profile-stats",
+  async ({ query, set }) => {
+    try {
+      const { userId } = query;
+      if (!userId) throw new BadRequestError("User ID is required");
+
+      const user = await UserModel.findById(userId)
+        .select("username email profileViews profileVisitors")
+        .populate("profileVisitors.userId", "username email profileImage")
+        .lean();
+
+      if (!user) throw new BadRequestError("User not found");
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Profile stats retrieved",
+        data: user,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get profile stats" },
+    query: t.Object({
+      userId: t.String(),
+    }),
+  }
+)
