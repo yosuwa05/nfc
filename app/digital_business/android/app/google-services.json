@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "946844520376",
+    "project_id": "digital-business-card-f430d",
+    "storage_bucket": "digital-business-card-f430d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:946844520376:android:f6531f9456352b9036494d",
+        "android_client_info": {
+          "package_name": "com.digitalbusiness.digital_business"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9OahQTM74Z6NY_Oxp5uJJ3zKGldbXKIk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
