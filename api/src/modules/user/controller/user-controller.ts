@@ -1133,3 +1133,101 @@ export const userController = new Elysia({
     }),
   }
 )
+
+
+.get(
+  "/profile",
+  async ({ query, set }) => {
+    try {
+      const { userId } = query;
+
+      if (!userId) {
+        throw new BadRequestError("User ID is required");
+      }
+
+      const Userdataa = await UserModel.findById(userId) 
+        .lean();
+ 
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Follow stats retrieved successfully",
+        data: Userdataa ,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get Profile" },
+    query: t.Object({
+      userId: t.String(),
+    }),
+  }
+)
+
+
+.post(
+  "/dashboard",
+  async ({ query, set }) => {
+    try {
+      const { userId } = query;
+
+      if (!userId) {
+        throw new BadRequestError("User ID is required");
+      }
+
+      const Userdataa = await UserModel.findById(userId) 
+      .select("username email profileViews")
+      .lean();
+
+
+      const followersCount = await FollowModel.countDocuments({
+        following: userId,
+        status: "active",
+      });
+
+      const followingCount = await FollowModel.countDocuments({
+        follower: userId,
+        status: "active",
+      });
+
+
+      const visitcount = await ProfileVisitorModel.countDocuments({
+        profileId : userId, 
+      });
+
+
+
+
+      set.status = 200;
+      return {
+        status: true,
+        message: "Follow stats retrieved successfully",
+        data: {
+          user : Userdataa ,
+          follower : followersCount,
+          following : followingCount,
+          visit : visitcount
+        } ,
+      };
+    } catch (error) {
+      set.status = 400;
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+  {
+    detail: { summary: "Get follower & following count for a user" },
+    query: t.Object({
+      userId: t.String(),
+    }),
+  }
+)
