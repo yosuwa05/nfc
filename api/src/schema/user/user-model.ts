@@ -108,7 +108,7 @@ const userSchema = new Schema<User>(
       }
     ],
     subscriptionPlan: { type: String, enum: ['basic', 'pro', 'pro+'], default: 'basic' },
-    slug: { type: String, unique: true, default: '' },
+    slug: { type: String, unique: true, default: '' , sparse: true, },
     businessDetails: { type: businessDetailsSchema, default: {} },
         businessImages: { type: [String], default: [] },
   },

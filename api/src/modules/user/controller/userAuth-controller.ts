@@ -57,12 +57,15 @@ export const userAuthController = new Elysia({
       let user = await UserModel.findOne({ mobile, isDeleted: false });
       
       let isNewUser = false;
+
+      console.log('qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')
       
       if (!user) {
         user = new UserModel({
           mobile,
           fcmToken: fcmToken || '',
           isDeleted: false,
+          slug: mobile,
         });
         isNewUser = true;
       } 
@@ -85,6 +88,8 @@ export const userAuthController = new Elysia({
         "user"
       );
 
+      console.log('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+
       // Format the username
       const formatUsername = (name: string) => {
         return name.split(' ').map((part: string) => 
@@ -92,12 +97,16 @@ export const userAuthController = new Elysia({
         ).join(' ');
       };
 
+      console.log('ffffffffffffffffffffffffffffffffffffffffffffffffff')
+
       // Prepare user data, excluding sensitive fields and trimming to main details
       const { fcmToken: _, ...userData } = user.toObject();
       userData.username = formatUsername(userData.username || '');
 
       set.headers["Authorization"] = `Bearer ${token}`;
       set.status = 200;
+
+      console.log('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
       
       return {
         message: isNewUser ? "Registration and Login Successful" : "Login Successful",

@@ -884,11 +884,16 @@ export const userController = new Elysia({
   "/followers",
   async ({ query, set }) => {
     try {
-      const { userId, search } = query;
+      const { userId, search, page , limit } = query;
 
       if (!userId) {
         throw new BadRequestError("User ID is required");
       }
+
+      // Parse pagination parameters
+      const pageNum = Math.max(1, parseInt(page));
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 items per page
+      const skip = (pageNum - 1) * limitNum;
 
       // Find all followerIds (users who follow this user)
       const follows = await FollowModel.find({ following: userId, status: "active" })
@@ -897,7 +902,7 @@ export const userController = new Elysia({
 
       const followerIds = follows.map(f => f.follower);
 
-      // Optimized: Fetch only needed user fields
+      // Build search filter
       const searchFilter = search
         ? {
             _id: { $in: followerIds },
@@ -908,15 +913,26 @@ export const userController = new Elysia({
           }
         : { _id: { $in: followerIds } };
 
+      // Get total count for pagination
+      const totalFollowers = await UserModel.countDocuments(searchFilter);
+
+      // Fetch paginated followers
       const followers = await UserModel.find(searchFilter)
-        .select("username email profileImage role") // limit fields
+        .skip(skip)
+        .limit(limitNum)
         .lean();
+
+      // Calculate pagination metadata
+      const totalPages = Math.ceil(totalFollowers / limitNum);
+      const hasNextPage = pageNum < totalPages;
+      const hasPrevPage = pageNum > 1;
 
       set.status = 200;
       return {
         status: true,
         message: "Followers fetched successfully",
         data: followers,
+        total : totalFollowers 
       };
     } catch (error) {
       set.status = 400;
@@ -927,22 +943,35 @@ export const userController = new Elysia({
     }
   },
   {
-    detail: { summary: "Get list of followers" },
+    detail: { 
+      summary: "Get list of followers with pagination",
+      description: "Retrieve followers with pagination support. Default page=1, limit=10. Maximum limit is 100."
+    },
     query: t.Object({
       userId: t.String(),
       search: t.Optional(t.String()),
+      page: t.Optional(t.String()),
+      limit: t.Optional(t.String()),
     }),
   }
 )
+
+
+
 .get(
   "/following",
   async ({ query, set }) => {
     try {
-      const { userId, search } = query;
+      const { userId, search, page = "1", limit = "10" } = query;
 
       if (!userId) {
         throw new BadRequestError("User ID is required");
       }
+
+      // Parse pagination parameters
+      const pageNum = Math.max(1, parseInt(page));
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 items per page
+      const skip = (pageNum - 1) * limitNum;
 
       // Find all followingIds (users this user follows)
       const follows = await FollowModel.find({ follower: userId, status: "active" })
@@ -951,6 +980,7 @@ export const userController = new Elysia({
 
       const followingIds = follows.map(f => f.following);
 
+      // Build search filter
       const searchFilter = search
         ? {
             _id: { $in: followingIds },
@@ -961,15 +991,27 @@ export const userController = new Elysia({
           }
         : { _id: { $in: followingIds } };
 
+      // Get total count for pagination
+      const totalFollowing = await UserModel.countDocuments(searchFilter);
+
+      // Fetch paginated following users
       const following = await UserModel.find(searchFilter)
         .select("username email profileImage role")
+        .skip(skip)
+        .limit(limitNum)
         .lean();
+
+      // Calculate pagination metadata
+      const totalPages = Math.ceil(totalFollowing / limitNum);
+      const hasNextPage = pageNum < totalPages;
+      const hasPrevPage = pageNum > 1;
 
       set.status = 200;
       return {
         status: true,
         message: "Following fetched successfully",
         data: following,
+        total : totalFollowing,
       };
     } catch (error) {
       set.status = 400;
@@ -980,10 +1022,15 @@ export const userController = new Elysia({
     }
   },
   {
-    detail: { summary: "Get list of following" },
+    detail: { 
+      summary: "Get list of following with pagination",
+      description: "Retrieve users that this user follows with pagination support. Default page=1, limit=10. Maximum limit is 100."
+    },
     query: t.Object({
       userId: t.String(),
       search: t.Optional(t.String()),
+      page: t.Optional(t.String()),
+      limit: t.Optional(t.String()),
     }),
   }
 )
